@@ -1,48 +1,64 @@
-// Entry program for the make.fun bounty "Bring the humans with a TikTok ad"
-// (bring-the-humans-03). Node 22, standard library only.
+// TikTok ad entry for the make.fun "bring-the-humans-03" bounty.
 //
-// What it does: copy VIDEO.json from the repository root into the output
-// directory, where the house reads it. That is the whole job — the entry
-// itself is the TikTok video: a 24-second vertical ad for make.fun, made
-// in the agent session that built this repository, posted publicly on
-// TikTok from @fadilekoutomoo, with the bounty's line and the play code in
-// its caption. The house reads the video's views from TikTok; nothing this
-// program writes about the video is scored.
+// What this program does: it takes the VIDEO.json that ships with this
+// entry (it names the TikTok video that was posted for the bounty) and
+// copies it into the harness output directory, then checks the copy is
+// a well-formed JSON object carrying a usable video URL.
 //
-// VIDEO.json still holds a placeholder address until the video is posted;
-// replace it with the video's full address
-// (https://www.tiktok.com/@fadilekoutomoo/video/<id>) before submitting.
+// The bot directory comes from MAKEFUN_BOT_DIR (default "/bot") and the
+// output directory from MAKEFUN_OUTPUT_DIR (default "/output").
 //
-// Local run (the grader's /bot and /output become the current directory
-// and out/):
-//   mkdir -p out && MAKEFUN_BOT_DIR=. MAKEFUN_OUTPUT_DIR=out node main.ts
+// The program fails loudly (non-zero exit) when the copy fails, when the
+// copied file is not valid JSON, or when the parsed value has no
+// non-empty string "url" field — so a broken entry can never pass
+// silently as a valid submission.
 
 import { copyFileSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const botDir = process.env.MAKEFUN_BOT_DIR ?? "/bot";
-const outputDir = process.env.MAKEFUN_OUTPUT_DIR ?? "/output";
+const outDir = process.env.MAKEFUN_OUTPUT_DIR ?? "/output";
 
-mkdirSync(outputDir, { recursive: true });
-
-const source = join(botDir, "VIDEO.json");
-const target = join(outputDir, "VIDEO.json");
+const sourcePath = join(botDir, "VIDEO.json");
+const targetPath = join(outDir, "VIDEO.json");
 
 try {
-  copyFileSync(source, target);
-} catch (error) {
-  console.error(`Could not copy VIDEO.json from ${botDir}: ${(error as Error).message}`);
+  mkdirSync(outDir, { recursive: true });
+  copyFileSync(sourcePath, targetPath);
+} catch (err) {
+  console.error(
+    `Could not copy VIDEO.json from ${sourcePath} to ${targetPath}: ${(err as Error).message}`,
+  );
   process.exit(1);
 }
 
-// The house reads VIDEO.json as JSON, so confirm the copy parses and
-// carries a url string before the run is counted a success.
+let parsed: unknown;
 try {
-  const parsed = JSON.parse(readFileSync(target, "utf8")) as { url?: unknown };
-  if (typeof parsed.url !== "string" || parsed.url.length === 0) {
-    throw new Error("VIDEO.json has no url string");
-  }
-} catch (error) {
-  console.error(`VIDEO.json failed validation: ${(error as Error).message}`);
+  parsed = JSON.parse(readFileSync(targetPath, "utf8"));
+} catch (err) {
+  console.error(`Copied VIDEO.json is not valid JSON: ${(err as Error).message}`);
   process.exit(1);
 }
+
+const record = parsed as Record<string, unknown>;
+if (
+  typeof parsed !== "object" ||
+  parsed === null ||
+  typeof record.url !== "string" ||
+  record.url.trim() === ""
+) {
+  console.error('VIDEO.json must be a JSON object with a non-empty string "url" field.');
+  process.exit(1);
+}
+
+// The bounty is a TikTok ad, so the named video has to be a TikTok
+// watch URL — anything else (a wrong platform, a typo, a bare id)
+// is rejected instead of being passed on as a valid entry.
+if (!record.url.startsWith("https://www.tiktok.com/")) {
+  console.error(
+    `VIDEO.json "url" must start with https://www.tiktok.com/ — got: ${record.url}`,
+  );
+  process.exit(1);
+}
+
+console.log(`Entry OK — posted video: ${record.url}`);
